@@ -12,7 +12,19 @@ An AI-powered web application that checks English and Slovak texts for spelling,
 - **User-Friendly Interface**: Clean, modern design with responsive layout
 - **Keyboard Shortcuts**: Use Ctrl/Cmd + Enter to check text quickly
 
-## 🚀 Getting Started
+## 🌐 Quick Start - Get a Public URL
+
+**Want to use this online with a public URL?**
+
+👉 **See [DEPLOYMENT.md](DEPLOYMENT.md)** for step-by-step deployment to Railway, Render, or Vercel (all have free tiers!)
+
+**Want to use this in any Claude conversation?**
+
+👉 **See [CLAUDE-INTEGRATION.md](CLAUDE-INTEGRATION.md)** for integration options including Claude Projects, MCP servers, bookmarklets, and more!
+
+---
+
+## 🚀 Getting Started (Local Development)
 
 ### Prerequisites
 
