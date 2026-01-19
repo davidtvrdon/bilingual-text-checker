@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bilingual Text Checker - English & Slovak</title>
+    <title>Simple AI Editor - English & Slovak</title>
     <style>
         * {
             margin: 0;
@@ -326,6 +326,156 @@
             margin-top: 8px;
         }
 
+        /* Tooltip styles */
+        .correction-tooltip {
+            position: fixed;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            max-width: 350px;
+            z-index: 1000;
+            display: none;
+            border: 2px solid #e9ecef;
+            animation: tooltipFadeIn 0.2s ease;
+        }
+
+        @keyframes tooltipFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .correction-tooltip.active {
+            display: block;
+        }
+
+        .tooltip-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .tooltip-type-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tooltip-type-badge.grammar {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .tooltip-type-badge.spelling {
+            background: #feca57;
+            color: #333;
+        }
+
+        .tooltip-type-badge.punctuation {
+            background: #48dbfb;
+            color: white;
+        }
+
+        .tooltip-type-badge.clarity {
+            background: #1dd1a1;
+            color: white;
+        }
+
+        .tooltip-close {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #999;
+            line-height: 1;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .tooltip-close:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .tooltip-change {
+            margin: 15px 0;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .tooltip-change-label {
+            font-size: 0.75em;
+            color: #6c757d;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .tooltip-original {
+            color: #e74c3c;
+            text-decoration: line-through;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+
+        .tooltip-arrow {
+            color: #95a5a6;
+            margin: 0 8px;
+        }
+
+        .tooltip-corrected {
+            color: #27ae60;
+            font-weight: 700;
+        }
+
+        .tooltip-explanation {
+            color: #495057;
+            line-height: 1.6;
+            font-size: 0.95em;
+        }
+
+        .tooltip-explanation-label {
+            font-size: 0.75em;
+            color: #6c757d;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            margin-top: 12px;
+        }
+
+        mark.clickable {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        mark.clickable:hover {
+            opacity: 0.8;
+            transform: translateY(-1px);
+        }
+
+        mark.clickable.active {
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+        }
+
         @media (max-width: 968px) {
             .content {
                 grid-template-columns: 1fr;
@@ -345,8 +495,8 @@
 <body>
     <div class="container">
         <header>
-            <h1>✍️ Bilingual Text Checker</h1>
-            <p class="subtitle">Check English & Slovak texts for spelling, grammar, punctuation & clarity</p>
+            <h1>✨ Simple AI Editor</h1>
+            <p class="subtitle">AI-powered editing for English & Slovak texts</p>
         </header>
 
         <div class="controls">
@@ -383,6 +533,26 @@
                 </div>
                 <div id="correctionsList"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- Correction Tooltip -->
+    <div id="correctionTooltip" class="correction-tooltip">
+        <div class="tooltip-header">
+            <span id="tooltipType" class="tooltip-type-badge"></span>
+            <button class="tooltip-close" onclick="closeTooltip()">×</button>
+        </div>
+        <div class="tooltip-change">
+            <div class="tooltip-change-label">Change</div>
+            <div>
+                <span id="tooltipOriginal" class="tooltip-original"></span>
+                <span class="tooltip-arrow">→</span>
+                <span id="tooltipCorrected" class="tooltip-corrected"></span>
+            </div>
+        </div>
+        <div>
+            <div class="tooltip-explanation-label">Explanation</div>
+            <div id="tooltipExplanation" class="tooltip-explanation"></div>
         </div>
     </div>
 
@@ -484,27 +654,44 @@
                 clarity: '#1dd1a1'
             };
 
+            // Store corrections globally for tooltip access
+            window.currentCorrections = result.corrections;
+
             // Sort corrections by position (reverse order to maintain positions)
             const sortedCorrections = [...result.corrections].sort((a, b) => b.position - a.position);
 
             // Apply highlights to corrected text
-            sortedCorrections.forEach((correction, index) => {
+            sortedCorrections.forEach((correction, correctionIndex) => {
                 const corrected = correction.corrected;
                 const pos = correction.position;
                 const type = correction.type.toLowerCase();
                 const bgColor = typeColors[type] || '#ffffcc';
                 const borderColor = typeBorders[type] || '#667eea';
 
+                // Find the original index in the unsorted array
+                const originalIndex = result.corrections.indexOf(correction);
+
                 if (pos >= 0 && pos + corrected.length <= highlightedText.length) {
                     const before = highlightedText.substring(0, pos);
                     const after = highlightedText.substring(pos + corrected.length);
-                    const highlighted = `<mark style="background: ${bgColor}; border-bottom: 2px solid ${borderColor}; padding: 2px 4px; border-radius: 3px; cursor: help;" title="${correction.explanation}">${escapeHtml(corrected)}</mark>`;
+                    const highlighted = `<mark class="clickable" data-correction-index="${originalIndex}" style="background: ${bgColor}; border-bottom: 2px solid ${borderColor}; padding: 2px 4px; border-radius: 3px;">${escapeHtml(corrected)}</mark>`;
                     highlightedText = before + highlighted + after;
                 }
             });
 
             outputContainer.innerHTML = `<div class="corrected-text">${highlightedText}</div>`;
             outputContainer.className = 'output-container';
+
+            // Add click event listeners to all marks
+            setTimeout(() => {
+                const marks = outputContainer.querySelectorAll('mark.clickable');
+                marks.forEach(mark => {
+                    mark.addEventListener('click', function(e) {
+                        const index = parseInt(this.getAttribute('data-correction-index'));
+                        showTooltip(window.currentCorrections[index], e, this);
+                    });
+                });
+            }, 100);
 
             // Display statistics with prominent visual design
             if (result.corrections.length > 0) {
@@ -585,6 +772,68 @@
                 correctionsList.innerHTML = correctionsHTML;
             }
         }
+
+        // Tooltip functions
+        function showTooltip(correction, event, element) {
+            const tooltip = document.getElementById('correctionTooltip');
+            const tooltipType = document.getElementById('tooltipType');
+            const tooltipOriginal = document.getElementById('tooltipOriginal');
+            const tooltipCorrected = document.getElementById('tooltipCorrected');
+            const tooltipExplanation = document.getElementById('tooltipExplanation');
+
+            // Remove active class from all marks
+            document.querySelectorAll('mark.clickable').forEach(m => m.classList.remove('active'));
+
+            // Add active class to clicked mark
+            element.classList.add('active');
+
+            // Populate tooltip content
+            tooltipType.textContent = correction.type.toUpperCase();
+            tooltipType.className = `tooltip-type-badge ${correction.type.toLowerCase()}`;
+            tooltipOriginal.textContent = correction.original;
+            tooltipCorrected.textContent = correction.corrected;
+            tooltipExplanation.textContent = correction.explanation;
+
+            // Position tooltip near the clicked element
+            const rect = element.getBoundingClientRect();
+            const tooltipHeight = 250; // Approximate tooltip height
+            const tooltipWidth = 350;
+
+            let top = rect.bottom + window.scrollY + 10;
+            let left = rect.left + window.scrollX;
+
+            // Adjust if tooltip would go off screen
+            if (top + tooltipHeight > window.innerHeight + window.scrollY) {
+                top = rect.top + window.scrollY - tooltipHeight - 10;
+            }
+
+            if (left + tooltipWidth > window.innerWidth) {
+                left = window.innerWidth - tooltipWidth - 20;
+            }
+
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+            tooltip.classList.add('active');
+        }
+
+        function closeTooltip() {
+            const tooltip = document.getElementById('correctionTooltip');
+            tooltip.classList.remove('active');
+
+            // Remove active class from all marks
+            document.querySelectorAll('mark.clickable').forEach(m => m.classList.remove('active'));
+        }
+
+        // Close tooltip when clicking outside
+        document.addEventListener('click', function(e) {
+            const tooltip = document.getElementById('correctionTooltip');
+            const isClickInsideTooltip = tooltip.contains(e.target);
+            const isClickOnMark = e.target.closest('mark.clickable');
+
+            if (!isClickInsideTooltip && !isClickOnMark && tooltip.classList.contains('active')) {
+                closeTooltip();
+            }
+        });
 
         function escapeHtml(text) {
             const div = document.createElement('div');
