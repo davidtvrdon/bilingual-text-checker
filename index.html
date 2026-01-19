@@ -466,15 +466,47 @@
                 return;
             }
 
-            // Display corrected text with highlights - escape HTML first, then add highlights
-            let displayText = escapeHtml(result.correctedText);
+            // Create highlighted corrected text with inline corrections
+            let highlightedText = result.correctedText;
 
-            // We need to recalculate positions after HTML escaping
-            // For simplicity, we'll just show the corrected text and list corrections below
-            outputContainer.innerHTML = `<div class="corrected-text">${displayText}</div>`;
+            // Color mapping for each type
+            const typeColors = {
+                grammar: '#ffe6e6',
+                spelling: '#fff9e6',
+                punctuation: '#e6f7ff',
+                clarity: '#e6fff5'
+            };
+
+            const typeBorders = {
+                grammar: '#ff6b6b',
+                spelling: '#feca57',
+                punctuation: '#48dbfb',
+                clarity: '#1dd1a1'
+            };
+
+            // Sort corrections by position (reverse order to maintain positions)
+            const sortedCorrections = [...result.corrections].sort((a, b) => b.position - a.position);
+
+            // Apply highlights to corrected text
+            sortedCorrections.forEach((correction, index) => {
+                const corrected = correction.corrected;
+                const pos = correction.position;
+                const type = correction.type.toLowerCase();
+                const bgColor = typeColors[type] || '#ffffcc';
+                const borderColor = typeBorders[type] || '#667eea';
+
+                if (pos >= 0 && pos + corrected.length <= highlightedText.length) {
+                    const before = highlightedText.substring(0, pos);
+                    const after = highlightedText.substring(pos + corrected.length);
+                    const highlighted = `<mark style="background: ${bgColor}; border-bottom: 2px solid ${borderColor}; padding: 2px 4px; border-radius: 3px; cursor: help;" title="${correction.explanation}">${escapeHtml(corrected)}</mark>`;
+                    highlightedText = before + highlighted + after;
+                }
+            });
+
+            outputContainer.innerHTML = `<div class="corrected-text">${highlightedText}</div>`;
             outputContainer.className = 'output-container';
 
-            // Display corrections list with statistics
+            // Display statistics with prominent visual design
             if (result.corrections.length > 0) {
                 // Count correction types
                 const stats = result.corrections.reduce((acc, c) => {
@@ -482,20 +514,58 @@
                     return acc;
                 }, {});
 
-                let statsHTML = '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; flex-wrap: wrap;">';
-                statsHTML += `<div style="font-weight: 600; color: #495057;">Total corrections: ${result.corrections.length}</div>`;
-                Object.entries(stats).forEach(([type, count]) => {
-                    const colors = {
-                        grammar: '#ff6b6b',
-                        spelling: '#feca57',
-                        punctuation: '#48dbfb',
-                        clarity: '#1dd1a1'
-                    };
-                    statsHTML += `<div style="color: ${colors[type] || '#667eea'};">• ${type.charAt(0).toUpperCase() + type.slice(1)}: ${count}</div>`;
-                });
-                statsHTML += '</div>';
+                // Create prominent stats cards
+                let statsHTML = '<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin-bottom: 25px; color: white;">';
+                statsHTML += `<div style="font-size: 1.3em; font-weight: 700; margin-bottom: 15px;">📊 Analysis Summary</div>`;
+                statsHTML += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">';
 
-                let correctionsHTML = statsHTML + '<div class="corrections-title">📋 Corrections Made:</div>';
+                // Total card
+                statsHTML += `
+                    <div style="background: rgba(255, 255, 255, 0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 2em; font-weight: 700;">${result.corrections.length}</div>
+                        <div style="font-size: 0.9em; opacity: 0.95;">Total Issues</div>
+                    </div>
+                `;
+
+                // Individual type cards
+                const typeIcons = {
+                    grammar: '📝',
+                    spelling: '🔤',
+                    punctuation: '❗',
+                    clarity: '✨'
+                };
+
+                Object.entries(stats).forEach(([type, count]) => {
+                    const icon = typeIcons[type] || '•';
+                    statsHTML += `
+                        <div style="background: rgba(255, 255, 255, 0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 1.8em; font-weight: 700;">${count}</div>
+                            <div style="font-size: 0.9em; opacity: 0.95;">${icon} ${type.charAt(0).toUpperCase() + type.slice(1)}</div>
+                        </div>
+                    `;
+                });
+
+                statsHTML += '</div></div>';
+
+                // Legend for highlighting
+                let legendHTML = '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;">';
+                legendHTML += '<div style="font-weight: 600; margin-bottom: 10px; color: #495057;">📌 Highlight Legend:</div>';
+                legendHTML += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">';
+
+                Object.entries(stats).forEach(([type, count]) => {
+                    const bgColor = typeColors[type] || '#ffffcc';
+                    const borderColor = typeBorders[type] || '#667eea';
+                    legendHTML += `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: ${bgColor}; border-bottom: 2px solid ${borderColor}; padding: 4px 8px; border-radius: 3px; font-size: 0.85em;">Example</span>
+                            <span style="font-size: 0.9em; color: #495057;">${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                        </div>
+                    `;
+                });
+
+                legendHTML += '</div></div>';
+
+                let correctionsHTML = statsHTML + legendHTML + '<div class="corrections-title">📋 Detailed Corrections:</div>';
 
                 result.corrections.forEach((correction, index) => {
                     const typeClass = correction.type.toLowerCase();
