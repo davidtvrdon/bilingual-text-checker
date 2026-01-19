@@ -6,10 +6,79 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Rate limiting configuration
+const rateLimit = new Map();
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
+const MAX_REQUESTS_PER_WINDOW = 20; // 20 requests per hour per IP
+
+// Optional password protection (set ACCESS_PASSWORD in .env to enable)
+const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('.'));
+
+// Rate limiting middleware
+function rateLimitMiddleware(req, res, next) {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+
+    // Clean up old entries
+    for (const [key, value] of rateLimit.entries()) {
+        if (now - value.firstRequest > RATE_LIMIT_WINDOW) {
+            rateLimit.delete(key);
+        }
+    }
+
+    // Check rate limit
+    if (!rateLimit.has(ip)) {
+        rateLimit.set(ip, { firstRequest: now, count: 1 });
+        return next();
+    }
+
+    const userData = rateLimit.get(ip);
+
+    // Reset if window has passed
+    if (now - userData.firstRequest > RATE_LIMIT_WINDOW) {
+        rateLimit.set(ip, { firstRequest: now, count: 1 });
+        return next();
+    }
+
+    // Check if limit exceeded
+    if (userData.count >= MAX_REQUESTS_PER_WINDOW) {
+        const resetTime = new Date(userData.firstRequest + RATE_LIMIT_WINDOW);
+        return res.status(429).json({
+            error: 'Rate limit exceeded',
+            message: `Too many requests. Please try again after ${resetTime.toLocaleTimeString()}.`,
+            limit: MAX_REQUESTS_PER_WINDOW,
+            resetAt: resetTime.toISOString()
+        });
+    }
+
+    // Increment count
+    userData.count++;
+    next();
+}
+
+// Password middleware (optional)
+function passwordMiddleware(req, res, next) {
+    // Skip if no password is set
+    if (!ACCESS_PASSWORD) {
+        return next();
+    }
+
+    const providedPassword = req.headers['x-access-password'];
+
+    if (providedPassword !== ACCESS_PASSWORD) {
+        return res.status(401).json({
+            error: 'Unauthorized',
+            message: 'Invalid or missing access password'
+        });
+    }
+
+    next();
+}
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -17,7 +86,7 @@ const anthropic = new Anthropic({
 });
 
 // API endpoint for text checking
-app.post('/api/check-text', async (req, res) => {
+app.post('/api/check-text', rateLimitMiddleware, passwordMiddleware, async (req, res) => {
     try {
         const { text, language } = req.body;
 
