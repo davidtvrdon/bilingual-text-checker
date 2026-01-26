@@ -100,68 +100,73 @@ app.post('/api/check-text', rateLimitMiddleware, passwordMiddleware, async (req,
 
         const languageName = language === 'english' ? 'English' : 'Slovak';
 
-        // Create prompt for Claude
-        const prompt = `You are an expert ${languageName} language editor. Analyze the following text for:
-1. Spelling errors
-2. Grammatical mistakes
-3. Punctuation errors
-4. Clarity improvements
+        // Call Claude API with structured output
+        const message = await anthropic.messages.create({
+            model: 'claude-sonnet-4-5-20250929',
+            max_tokens: 4096,
+            system: `You are an expert ${languageName} language editor. Your task is to analyze text and return ONLY valid JSON with corrections. Never include any text before or after the JSON object.`,
+            messages: [{
+                role: 'user',
+                content: `Analyze this ${languageName} text for spelling, grammar, punctuation, and clarity errors:
 
-Text to analyze:
 """
 ${text}
 """
 
-Please provide:
-1. A corrected version of the entire text
-2. A detailed list of all corrections made
-
-Format your response as JSON with this exact structure:
+Return ONLY a JSON object in this exact format (no markdown, no code blocks, no extra text):
 {
-    "correctedText": "the full corrected text here",
+    "correctedText": "the corrected text",
     "corrections": [
         {
             "type": "spelling|grammar|punctuation|clarity",
-            "original": "the original incorrect text",
-            "corrected": "the corrected text",
-            "explanation": "explanation of why this change was made",
-            "context": "a few words of context around the error"
+            "original": "incorrect text",
+            "corrected": "fixed text",
+            "explanation": "why this was changed",
+            "context": "surrounding words"
         }
     ]
 }
 
-If the text has no errors, return:
+If no errors found, return:
 {
-    "correctedText": "same as original",
+    "correctedText": "${text.replace(/"/g, '\\"')}",
     "corrections": []
-}
-
-IMPORTANT: Return ONLY the JSON object, no additional text or explanation.`;
-
-        // Call Claude API
-        const message = await anthropic.messages.create({
-            model: 'claude-sonnet-4-5-20250929',
-            max_tokens: 4096,
-            messages: [{
-                role: 'user',
-                content: prompt
+}`
             }]
         });
 
         // Parse Claude's response
         let responseText = message.content[0].text;
 
-        // Remove markdown code blocks if present
-        responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        // Clean up the response - remove markdown, extra whitespace, etc.
+        responseText = responseText
+            .replace(/```json\n?/gi, '')
+            .replace(/```\n?/g, '')
+            .trim();
+
+        // Try to extract JSON if there's extra text
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            responseText = jsonMatch[0];
+        }
 
         let result;
         try {
             result = JSON.parse(responseText);
+
+            // Validate the structure
+            if (!result.correctedText || !Array.isArray(result.corrections)) {
+                throw new Error('Invalid response structure');
+            }
         } catch (parseError) {
             console.error('Failed to parse Claude response:', responseText);
+            console.error('Parse error:', parseError.message);
+
+            // Return a more helpful error with the actual response
             return res.status(500).json({
                 error: 'Failed to parse AI response',
-                details: parseError.message
+                details: parseError.message,
+                hint: 'The AI returned an unexpected format. Please try again.'
             });
         }
 
