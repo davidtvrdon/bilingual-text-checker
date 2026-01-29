@@ -100,48 +100,40 @@ app.post('/api/check-text', rateLimitMiddleware, passwordMiddleware, async (req,
 
         const languageName = language === 'english' ? 'English' : 'Slovak';
 
-        // Call Claude API with structured output
+        // Call Claude API with very explicit JSON instructions
         const message = await anthropic.messages.create({
             model: 'claude-sonnet-4-5-20250929',
             max_tokens: 4096,
-            system: `You are an expert ${languageName} language editor. Your task is to analyze text and return ONLY valid JSON with corrections. Never include any text before or after the JSON object.`,
+            system: `You are a ${languageName} text editor. You MUST respond with ONLY valid JSON. No markdown formatting, no code blocks, no explanatory text - ONLY the raw JSON object.`,
             messages: [{
                 role: 'user',
-                content: `Analyze this ${languageName} text for spelling, grammar, punctuation, and clarity errors:
+                content: `Check this text for errors and return JSON:
 
-"""
 ${text}
-"""
 
-Return ONLY a JSON object in this exact format (no markdown, no code blocks, no extra text):
+Response format (return ONLY this JSON structure, nothing else):
 {
-    "correctedText": "the corrected text",
-    "corrections": [
-        {
-            "type": "spelling|grammar|punctuation|clarity",
-            "original": "incorrect text",
-            "corrected": "fixed text",
-            "explanation": "why this was changed",
-            "context": "surrounding words"
-        }
-    ]
+  "correctedText": "corrected version here",
+  "corrections": [
+    {"type": "grammar", "original": "wrong", "corrected": "right", "explanation": "why", "context": "words around it"}
+  ]
 }
 
-If no errors found, return:
-{
-    "correctedText": "${text.replace(/"/g, '\\"')}",
-    "corrections": []
-}`
+If no errors: {"correctedText": "original text", "corrections": []}`
             }]
         });
 
-        // Parse Claude's response
+        // Parse Claude's response with extensive error handling
         let responseText = message.content[0].text;
+
+        console.log('Raw Claude response:', responseText.substring(0, 200)); // Log first 200 chars
 
         // Clean up the response - remove markdown, extra whitespace, etc.
         responseText = responseText
-            .replace(/```json\n?/gi, '')
-            .replace(/```\n?/g, '')
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*/g, '')
+            .replace(/^[^{]*/, '') // Remove any text before first {
+            .replace(/[^}]*$/, '') // Remove any text after last }
             .trim();
 
         // Try to extract JSON if there's extra text
@@ -155,19 +147,27 @@ If no errors found, return:
             result = JSON.parse(responseText);
 
             // Validate the structure
-            if (!result.correctedText || !Array.isArray(result.corrections)) {
-                throw new Error('Invalid response structure');
+            if (!result.correctedText) {
+                throw new Error('Missing correctedText field');
             }
+
+            if (!Array.isArray(result.corrections)) {
+                console.warn('corrections field is not an array, defaulting to empty array');
+                result.corrections = [];
+            }
+
         } catch (parseError) {
-            console.error('Failed to parse Claude response:', responseText);
+            console.error('Failed to parse Claude response');
+            console.error('Response text:', responseText);
             console.error('Parse error:', parseError.message);
 
-            // Return a more helpful error with the actual response
-            return res.status(500).json({
-                error: 'Failed to parse AI response',
-                details: parseError.message,
-                hint: 'The AI returned an unexpected format. Please try again.'
-            });
+            // Fallback: return the original text with no corrections
+            result = {
+                correctedText: text,
+                corrections: [],
+                hasChanges: false,
+                error: 'Could not parse AI response. Your text is shown as-is.'
+            };
         }
 
         // Add positions for highlighting (find each correction in the original text)
